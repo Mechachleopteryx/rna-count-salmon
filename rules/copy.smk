@@ -20,9 +20,8 @@ rule copy_fastq:
         time_min = (
             lambda wildcards, attempt: min(attempt * 1440, 2832)
         )
-    version: "1.0"
     log:
-        "logs/copy_{files}.log"
+        "logs/copy/{files}.log"
     wildcard_constraints:
         files = r"[^/]+"
     threads: 1
@@ -31,7 +30,7 @@ rule copy_fastq:
         extra = config["params"].get("copy_extra", ""),
         cold_storage = config.get("cold_storage", "NONE")
     wrapper:
-        f"{git}/cp/bio/cp"
+        f"{git}/bio/cp"
 
 """
 Same remarks as the above. Here, we copy the reference files.
@@ -40,7 +39,7 @@ rule copy_extra:
     input:
         lambda wildcards: ref_link_dict[wildcards.files]
     output:
-        temp("genome/{files}")
+        temp("genomes/{files}")
     message:
         "Copying {wildcards.files} as reference"
     resources:
@@ -50,9 +49,8 @@ rule copy_extra:
         time_min = (
             lambda wildcards, attempt: min(attempt * 1440, 2832)
         )
-    version: "1.0"
     log:
-        "logs/copy_{files}.log"
+        "logs/copy/{files}.log"
     wildcard_constraints:
         files = r"[^/]+"
     threads: 1
@@ -61,4 +59,4 @@ rule copy_extra:
         extra = config["params"].get("copy_extra", ""),
         cold_storage = config.get("cold_storage", "NONE")
     wrapper:
-        f"{git}/cp/bio/cp"
+        f"{git}/bio/cp"

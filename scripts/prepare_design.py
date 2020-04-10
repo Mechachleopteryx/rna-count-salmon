@@ -18,63 +18,35 @@ pytest -v ./prepare_design.py
 
 Usage example:
 # Single ended reads example:
-python3.7 ./prepare_design.py ../tests/reads --single
+python3.7 ./prepare_design.py tests/reads --single
 
 # Paired-end libary example:
-python3.7 ./prepare_design.py ../tests/reads
+python3.7 ./prepare_design.py tests/reads
 
 # Search in sub-directories:
-python3.7 ./prepare_design.py ../tests --recursive
+python3.7 ./prepare_design.py tests --recursive
 """
 
-import argparse           # Parse command line
-import logging            # Traces and loggings
-import logging.handlers   # Logging behaviour
-import os                 # OS related activities
-import pandas as pd       # Parse TSV files
-import pytest             # Unit testing
-import shlex              # Lexical analysis
-import sys                # System related methods
+import argparse  # Parse command line
+import logging  # Traces and loggings
+import os  # OS related activities
+import pandas as pd  # Parse TSV files
+import pytest  # Unit testing
+import shlex  # Lexical analysis
+import sys  # System related methods
 
-from pathlib import Path                        # Paths related methods
-from typing import Dict, Generator, List, Any   # Type hints
+from pathlib import Path  # Paths related methods
+from snakemake.utils import makedirs  # Easily build directories
+from typing import Dict, Generator, List, Any  # Type hints
 
-logger = logging.getLogger(
-    os.path.splitext(os.path.basename(sys.argv[0]))[0]
-)
-
-
-# Building custom class for help formatter
-class CustomFormatter(argparse.RawDescriptionHelpFormatter,
-                      argparse.ArgumentDefaultsHelpFormatter):
-    """
-    This class is used only to allow line breaks in the documentation,
-    without breaking the classic argument formatting.
-    """
-    pass
-
-
-# Handling logging options
-# No tests for this function
-def setup_logging(args: argparse.ArgumentParser) -> None:
-    """
-    Configure logging behaviour
-    """
-    root = logging.getLogger("")
-    root.setLevel(logging.WARNING)
-    logger.setLevel(args.debug and logging.DEBUG or logging.INFO)
-    if not args.quiet:
-        ch = logging.StreamHandler()
-        ch.setFormatter(logging.Formatter(
-            "%(levelname)s [%(name)s]: %(message)s"
-        ))
-        root.addHandler(ch)
+from common_script_rna_count_salmon import *
 
 
 # Processing functions
 # Looking for fastq files
-def search_fq(fq_dir: Path,
-              recursive: bool = False) -> Generator[str, str, None]:
+def search_fq(
+    fq_dir: Path, recursive: bool = False
+) -> Generator[str, str, None]:
     """
     Iterate over a directory and search for fastq files
 
@@ -87,14 +59,14 @@ def search_fq(fq_dir: Path,
                     Generator[str, str, None]       A Generator of paths
 
     Example:
-    >>> search_fq(Path("../tests/reads/"))
+    >>> search_fq(Path("tests/reads/"))
     <generator object search_fq at 0xXXXXXXXXXXXX>
 
-    >>> list(search_fq(Path("../tests/", True)))
-    [PosixPath('../tests/reads/A_R2.fastq'),
-     PosixPath('../tests/reads/B_R2.fastq'),
-     PosixPath('../tests/reads/A_R1.fastq'),
-     PosixPath('../tests/reads/B_R1.fastq')]
+    >>> list(search_fq(Path("tests/", True)))
+    [PosixPath('tests/reads/A_R2.fastq'),
+     PosixPath('tests/reads/B_R2.fastq'),
+     PosixPath('tests/reads/A_R1.fastq'),
+     PosixPath('tests/reads/B_R1.fastq')]
     """
     for path in fq_dir.iterdir():
         if path.is_dir():
@@ -116,8 +88,8 @@ def test_search_fq():
     Example:
     pytest -v prepare_design.py -k test_search_fq
     """
-    path = Path("../tests/reads/")
-    print(path)
+    path = Path("tests/reads/")
+
     expected = list(
         path / "{}_R{}.fastq".format(sample, stream)
         for sample in ["A", "B"]
@@ -156,22 +128,22 @@ def classify_fq(fq_files: List[Path], paired: bool = True) -> Dict[str, Path]:
     fq_dict = {}
     if paired is not True:
         # Case single fastq per sample
-        logger.debug("Sorting fastq files as single-ended")
+        logging.debug("Sorting fastq files as single-ended")
         for fq in fq_files:
             fq_dict[fq.name] = {
                 "Sample_id": fq.stem,
-                "Upstream_file": fq.absolute()
+                "Upstream_file": fq.absolute(),
             }
     else:
         # Case pairs of fastq are used
-        logger.debug("Sorting fastq files as pair-ended")
+        logging.debug("Sorting fastq files as pair-ended")
         for fq1, fq2 in zip(fq_files[0::2], fq_files[1::2]):
             fq_dict[fq1.name] = {
                 "Sample_id": fq1.stem,
                 "Upstream_file": fq1.absolute(),
-                "Downstream_file": fq2.absolute()
+                "Downstream_file": fq2.absolute(),
             }
-    logger.debug(fq_dict)
+    logging.debug(fq_dict)
     return fq_dict
 
 
@@ -186,20 +158,18 @@ def test_classify_fq():
     prefix = Path(__file__).parent.parent
     fq_list = sorted(list(search_fq(prefix / "tests" / "reads")))
     expected = {
-        'A_R1.fastq': {
-            'Sample_id': 'A_R1',
-            'Upstream_file': prefix / "tests" / "reads" / "A_R1.fastq",
-            'Downstream_file': prefix / "tests" / "reads" / 'A_R2.fastq'
+        "A_R1.fastq": {
+            "Sample_id": "A_R1",
+            "Upstream_file": prefix / "tests" / "reads" / "A_R1.fastq",
+            "Downstream_file": prefix / "tests" / "reads" / "A_R2.fastq",
         },
-        'B_R1.fastq': {
-            'Sample_id': 'B_R1',
-            'Upstream_file': prefix / "tests" / "reads" / 'B_R1.fastq',
-            'Downstream_file': prefix / "tests" / "reads" / 'B_R2.fastq'
-        }
+        "B_R1.fastq": {
+            "Sample_id": "B_R1",
+            "Upstream_file": prefix / "tests" / "reads" / "B_R1.fastq",
+            "Downstream_file": prefix / "tests" / "reads" / "B_R2.fastq",
+        },
     }
-    logger = logging.getLogger(
-        os.path.splitext(os.path.basename(sys.argv[0]))[0]
-    )
+
     assert classify_fq(fq_list) == expected
 
 
@@ -224,7 +194,7 @@ def parse_args(args: Any = sys.argv[1:]) -> argparse.ArgumentParser:
     main_parser = argparse.ArgumentParser(
         description=sys.modules[__name__].__doc__,
         formatter_class=CustomFormatter,
-        epilog="This script does not perform any magic. Check the result."
+        epilog="This script does not perform any magic. Check the result.",
     )
 
     # Required arguments
@@ -236,38 +206,43 @@ def parse_args(args: Any = sys.argv[1:]) -> argparse.ArgumentParser:
 
     # Optional arguments
     main_parser.add_argument(
-        "-s", "--single",
+        "-s",
+        "--single",
         help="The samples are single ended rnaseq reads, not pair ended",
-        action="store_true"
+        action="store_true",
     )
 
     main_parser.add_argument(
-        "-r", "--recursive",
+        "-r",
+        "--recursive",
         help="Recursively search in sub-directories for fastq files",
-        action="store_true"
+        action="store_true",
     )
 
     main_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         help="Path to output file (default: %(default)s)",
         type=str,
-        default="design.tsv"
+        default="design.tsv",
     )
 
     # Logging options
     log = main_parser.add_mutually_exclusive_group()
     log.add_argument(
-        "-d", "--debug",
+        "-d",
+        "--debug",
         help="Set logging in debug mode",
         default=False,
-        action='store_true'
+        action="store_true",
     )
 
     log.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         help="Turn off logging behaviour",
         default=False,
-        action='store_true'
+        action="store_true",
     )
 
     # Parsing command lines
@@ -284,11 +259,11 @@ def test_parse_args() -> None:
     options = parse_args(shlex.split("/path/to/fastq/dir/"))
     expected = argparse.Namespace(
         debug=False,
-        output='design.tsv',
-        path='/path/to/fastq/dir/',
+        output="design.tsv",
+        path="/path/to/fastq/dir/",
         quiet=False,
         recursive=False,
-        single=False
+        single=False,
     )
     assert options == expected
 
@@ -306,29 +281,35 @@ def main(args: argparse.ArgumentParser) -> None:
     """
     # Searching for fastq files and sorting them alphabetically
     fq_files = sorted(list(search_fq(Path(args.path), args.recursive)))
-    logger.debug("Head of alphabeticaly sorted list of fastq files:")
-    logger.debug([str(i) for i in fq_files[0:5]])
+    logging.debug("Head of alphabeticaly sorted list of fastq files:")
+    logging.debug([str(i) for i in fq_files[0:5]])
 
     # Building a dictionnary of fastq (pairs?) and identifiers
     fq_dict = classify_fq(fq_files)
 
     # Using Pandas to handle TSV output (yes pretty harsh I know)
     data = pd.DataFrame(fq_dict).T
-    logger.debug("\n{}".format(data.head()))
-    logger.debug("Saving results to {}".format(args.output))
+    logging.debug("\n{}".format(data.head()))
+    logging.debug("Saving results to {}".format(args.output))
     data.to_csv(args.output, sep="\t", index=False)
 
 
 # Running programm if not imported
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Parsing command line
     args = parse_args()
-    setup_logging(args)
+
+    makedirs("logs/prepare")
+
+    # Build logging object and behaviour
+    logging.basicConfig(
+        filename="logs/prepare/design.log", filemode="w", level=logging.DEBUG
+    )
 
     try:
-        logger.debug("Preparing design")
+        logging.debug("Preparing design")
         main(args)
     except Exception as e:
-        logger.exception("%s", e)
+        logging.exception("%s", e)
         sys.exit(1)
     sys.exit(0)

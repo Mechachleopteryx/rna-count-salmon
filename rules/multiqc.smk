@@ -7,23 +7,21 @@ https://snakemake-wrappers.readthedocs.io/en/stable/wrappers/multiqc.html
 """
 rule multiqc:
     input:
-        **get_targets(no_multiqc=True, no_aggregation=True)
+        **get_rcs_targets(get_fastqc=True, get_quant=True)
     output:
         report(
             "qc/multiqc_report.html",
             caption="../report/multiqc.rst",
             category="Quality Controls"
         )
-    params: ""
     threads: 1
     resources:
         mem_mb = (
-            lambda wildcards, attempt: min(attempt * 2048, 10240)
+            lambda wildcards, attempt: attempt * 2048
         ),
         time_min = (
-            lambda wildcards, attempt: min(attempt * 45, 120)
+            lambda wildcards, attempt: attempt * 45
         )
-    version: "1.0"
     log:
         "logs/multiqc.log"
     message:

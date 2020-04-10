@@ -14,12 +14,11 @@ rule salmon_index:
         "Indexing {input.fasta} with Salmon"
     resources:
         mem_mb = (
-            lambda wildcards, attempt: min(attempt * 2048 + 10240, 35580)
+            lambda wildcards, attempt: attempt * 2048 + 10240
         ),
         time_min = (
-            lambda wildcards, attempt: min(attempt * 15 + 60, 180)
+            lambda wildcards, attempt: attempt * 15 + 60
         )
-    version: "1.0"
     threads:
         min(config["threads"], 12)
     params:
@@ -40,22 +39,24 @@ rule salmon_quant:
     input:
         unpack(fq_pairs_w)
     output:
-        quant = "pseudo_mapping/{sample}/quant.sf"
+        quant = "pseudo_mapping/{sample}/quant.sf",
+        quant_genes = "pseudo_mapping/{sample}/quant.genes.sf"
     message:
         "Quantifying {wildcards.sample} with Salmon"
     resources:
         mem_mb = (
-            lambda wildcards, attempt: min(attempt * 5120 + 2048, 20480)
+            lambda wildcards, attempt: attempt * 5120 + 2048
         ),
         time_min = (
-            lambda wildcards, attempt: min(attempt * 15 + 75, 180)
+            lambda wildcards, attempt: attempt * 15 + 75
         )
-    version: swv
+    wildcard_constraints:
+        sample = sample_constraint
     threads:
         min(config["threads"], 12)
     params:
         libType = config["params"].get("libType", "A"),
-        extra = salmon_quant_extra()
+        extra = salmon_quant_extra(config)
     log:
         "logs/salmon/quant_{sample}.log"
     wrapper:
@@ -70,23 +71,25 @@ rule salmon_quant_rename:
     input:
         "pseudo_mapping/{sample}/quant.sf"
     output:
-        report(
-            "pseudo_mapping/{sample}/quant.{sample}.tsv",
-            caption="../report/salmon.transcripts.rst",
-            category="Sample Count"
-        )
+        "pseudo_mapping/{sample}/quant.{sample}.tsv"
     message:
         "Symbolic link for quantification of {wildcards.sample}"
     threads:
         1
     resources:
         mem_mb = (
-            lambda wildcards, attempt: min(attempt * 256 + 256, 1024)
+            lambda wildcards, attempt: attempt * 256 + 128
         ),
         time_min = (
-            lambda wildcards, attempt: min(attempt * 3 + 7, 10)
+            lambda wildcards, attempt: attempt * 3 + 2
         )
-    version:
-        1
+    log:
+        "logs/salmon/rename/{sample}.log"
+    conda:
+        "../envs/bash.yaml"
+    params:
+        pwd = os.getcwd()
+    wildcard_constraints:
+        sample = sample_constraint
     shell:
-        "ln -s ${{PWD}}/{input} ${{PWD}}/{output}"
+        "ln --verbose --symbolic {params.pwd}/{input} {params.pwd}/{output} > {log} 2>&1"

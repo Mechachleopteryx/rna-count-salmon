@@ -1,8 +1,9 @@
-name: python_3_7
+---
+name: bash
 channels:
   - bioconda
   - conda-forge
   - defaults
+  - r
 dependencies:
-  - python ==3.7
-  - pandas ==0.24.2
+  - conda-forge:bash=5.0.011 

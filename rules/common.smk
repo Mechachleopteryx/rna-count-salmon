@@ -4,21 +4,29 @@ one gathers all the python instructions surch as config mappings or input
 validations.
 """
 
-from snakemake.utils import validate
-from typing import Any, Dict, List
-
-import os.path as op    # Path and file system manipulation
 import os               # OS related operations
-import pandas as pd     # Deal with TSV files (design)
+import os.path as op    # Path and file system manipulation
 import sys              # System related operations
 
+
+from typing import Any, Dict, List     # Give IO information
+import pandas as pd                    # Deal with TSV files (design)
+from snakemake.utils import validate   # Check Yaml/TSV formats
+
+try:
+    from common_rna_count_salmon import *
+except ImportError:
+    print(locals())
+    raise
+
 # Snakemake-Wrappers version
-swv = "0.37.1"
+swv = "https://raw.githubusercontent.com/snakemake/snakemake-wrappers/0.51.0"
 # github prefix
-git = "https://bitbucket.org/tdayris/snakemake-wrappers/raw"
+git = "https://raw.githubusercontent.com/tdayris/snakemake-wrappers/Unofficial"
 
 # Loading configuration
-configfile: "config.yaml"
+if config == dict():
+    configfile: "config.yaml"
 validate(config, schema="../schemas/config.schema.yaml")
 
 # Loading deisgn file
@@ -34,148 +42,6 @@ validate(design, schema="../schemas/design.schema.yaml")
 
 report: "../report/general.rst"
 
-
-def fq_link() -> Dict[str, str]:
-    """
-    This function takes the "samples" described in config and returns
-    a dictionnary with:
-    sample file name : sample path
-    """
-    # Will cause KeyError on single stranded RNA-Seq analysis
-    # Better ask forgiveness than permission !
-    try:
-        # Paired-ended case
-        fq_list = chain(design["Upstream_file"], design["Downstream_file"])
-    except KeyError:
-        # Single ended case
-        fq_list = design["Upstream_file"]
-    finally:
-        return {
-            op.basename(fq): op.realpath(fq)
-            for fq in fq_list
-        }
-
-
-def fq_root() -> Dict[str, str]:
-    """
-    This function takes the fastq file list and returns the root
-    name corresponding to a fastq file
-    sample name: sample link path
-    """
-    # For now, bz2 compression is not taken into account.
-    possible_ext = ("fq", "fastq", "fq.gz", "fastq.gz")
-
-    # Will cause KeyError on single stranded RNA-Seq analysis
-    # Better ask forgiveness than permission !
-    try:
-        # Paired-ended case
-        fq_list = chain(design["Upstream_file"], design["Downstream_file"])
-    except KeyError:
-        # Single ended case
-        fq_list = design["Upstream_file"]
-
-    # Build final result
-    result = {}
-    for fq in fq_list:
-        # I always love writing these crazy for-break-else!
-        for ext in possible_ext:
-            if fq.endswith(ext):
-                # Extension removal
-                base = op.basename(fq)[:-(len(ext) + 1)]
-                result[base] = f"raw_data/{op.basename(fq)}"
-                break
-        else:
-            raise ValueError(f"Could not remove ext: {fq}")
-
-    return result
-
-
-def ref_link() -> Dict[str, str]:
-    """
-    This function takes the "ref" described in config and returns
-    a dictionnary with:
-    ref file name : ref path
-    """
-    # If not GTF is provided, error will be raised.
-    try:
-        # Case GTF is provided
-        fasta = config["ref"]["fasta"]
-        gtf = config["ref"]["gtf"]
-        return {
-            op.basename(fasta): op.realpath(fasta),
-            op.basename(gtf): op.realpath(gtf)
-        }
-    except KeyError:
-        # Case GTF is missing
-        fasta = config["ref"]["fasta"]
-        return {
-            op.basename(fasta): op.realpath(fasta)
-        }
-    except TypeError:
-        # Case GTF is missing
-        fasta = config["ref"]["fasta"]
-        return {
-            op.basename(fasta): op.realpath(fasta)
-        }
-
-
-def fq_pairs() -> Dict[str, str]:
-    """
-    This function returns a sample ID and
-    the corresponding fastq files.
-    """
-    # Will cause KeyError on single stranded RNA-Seq analysis
-    # Better ask forgiveness than permission !
-    try:
-        # Paired end case
-        iterator = zip(
-            design["Sample_id"],
-            design["Upstream_file"],
-            design["Downstream_file"]
-        )
-        return {
-            name: {
-                "r1": f"raw_data/{op.basename(fq1)}",
-                "r2": f"raw_data/{op.basename(fq2)}"
-            }
-            for name, fq1, fq2 in iterator
-        }
-    except KeyError:
-        # Single end case
-        iterator = zip(
-            design["Sample_id"],
-            design["Upstream_file"]
-        )
-        return {
-            name: {"r": f"raw_data/{op.basename(fq1)}"}
-            for name, fq1 in iterator
-        }
-
-
-def refs_pack() -> Dict[str, str]:
-    """
-    Return a dictionnary with references
-    """
-    # Will cause KeyError if no GTF is given.
-    # Better ask forgiveness than permission !
-    try:
-        # GTF is present
-        return {
-            "fasta": f"genome/{op.basename(config['ref']['fasta'])}",
-            "gtf": f"genome/{op.basename(config['ref']['gtf'])}"
-        }
-    except KeyError:
-        # No GTF provided !
-        return {
-            "fasta": f"genome/{op.basename(config['ref']['fasta'])}"
-        }
-    except TypeError:
-        # No GTF provided !
-        return {
-            "fasta": f"genome/{op.basename(config['ref']['fasta'])}"
-        }
-
-
 def fq_pairs_w(wildcards) -> Dict[str, str]:
     """
     Dynamic wildcards call for snakemake.
@@ -189,60 +55,57 @@ def fq_pairs_w(wildcards) -> Dict[str, str]:
                 "index": "salmon_index/genome_index"}
 
 
-def sample_id() -> List[str]:
-    """
-    Return the list of samples identifiers
-    """
-    return design["Sample_id"].tolist()
-
-
-def salmon_quant_extra() -> str:
-    """
-    Return the corrected list of parameters for kallist quant
-    """
-    base = config["params"].get("salmon_quant_extra", "")
-    try:
-        return f"{base} --gtf {str(config['gtf'])}"
-    except KeyError:
-        return base
-
-
-def get_targets(no_multiqc: bool = False,
-                no_aggregation: bool = False) -> Dict[str, Any]:
+def get_rcs_targets(get_fastqc: bool = False,
+                    get_aggreg: bool = False,
+                    get_multiqc: bool = False,
+                    get_renamed: bool = False,
+                    get_quant: bool = False) -> Dict[str, Any]:
     """
     This function returns the targets of Snakemake
     following the requests from the user.
     """
     targets = {}
-    if config["workflow"]["fastqc"] is True:
+    if config["workflow"]["fastqc"] is True and get_fastqc is True:
         targets["fastqc"] = expand(
             "qc/fastqc/{samples}_fastqc.{ext}",
             samples=fq_root_dict.keys(),
             ext=["html", "zip"]
         )
 
-    if config["workflow"]["multiqc"] and not no_multiqc and not no_aggregation:
+    if config["workflow"]["multiqc"] is True and get_multiqc is True:
         targets["multiqc"] = "qc/multiqc_report.html"
 
-    if config["workflow"]["aggregate"] is True:
-        targets["aggregation"] = [
-            "aggregated_salmon_counts/merged_NumReads.tsv",
-            "aggregated_salmon_counts/merged_TPM.tsv"
-        ]
+    if config["workflow"]["aggregate"] is True and get_aggreg is True:
+        targets["aggregation"] = expand(
+            "pseudo_mapping/aggregation/TPM{ext}.tsv",
+            ext=["", ".genes"]
+        )
 
-    targets["quant"] = expand(
-        "pseudo_mapping/{sample}/quant.{sample}.tsv",
-        sample=sample_id_list
-    )
+    if get_renamed is True:
+        targets["quant_renamed"] = expand(
+            "pseudo_mapping/{sample}/quant.{sample}.tsv",
+            sample=sample_id_list
+        )
+
+    if get_quant is True:
+        targets["quant"] = expand(
+            "pseudo_mapping/{sample}/quant.sf",
+            sample=sample_id_list
+        )
+
     return targets
 
 
 # We will use these functions multiple times. On large input datasets,
 # pre-computing all of these makes Snakemake faster.
-fq_link_dict = fq_link()
-fq_root_dict = fq_root()
-ref_link_dict = ref_link()
-fq_pairs_dict = fq_pairs()
-refs_pack_dict = refs_pack()
-sample_id_list = sample_id()
-targets_dict = get_targets()
+fq_link_dict = fq_link(design)
+fq_root_dict = fq_root(design)
+ref_link_dict = ref_link(config)
+fq_pairs_dict = fq_pairs(design)
+refs_pack_dict = refs_pack(config)
+sample_id_list = sample_id(design)
+targets_dict = get_rcs_targets()
+
+# Wildcards constraints
+sample_constraint = "|".join(sample_id_list)
+gene_ext_constraint = "|".join(["sf", "genes.sf"])
